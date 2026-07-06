@@ -2,22 +2,29 @@
 // Vercel Serverless Function — proxies image OCR + parsing to Anthropic
 // Accepts base64 image, returns parsed order JSON
 
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '8mb', // allow compressed images comfortably under this
-    },
-  },
-};
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { image, mimeType } = req.body;
+  // Vercel usually auto-parses JSON bodies, but fall back to manual parsing
+  // in case req.body arrives as a raw string/buffer instead of an object.
+  let body = req.body;
+  if (typeof body === "string") {
+    try { body = JSON.parse(body); }
+    catch (e) { return res.status(400).json({ error: "Invalid JSON body", detail: e.message }); }
+  }
+  if (Buffer.isBuffer(body)) {
+    try { body = JSON.parse(body.toString("utf8")); }
+    catch (e) { return res.status(400).json({ error: "Invalid JSON body (buffer)", detail: e.message }); }
+  }
+  if (!body || typeof body !== "object") {
+    return res.status(400).json({ error: "Request body missing or not JSON", bodyType: typeof req.body });
+  }
+
+  const { image, mimeType } = body;
   if (!image) {
-    return res.status(400).json({ error: "Missing image field (base64 string)" });
+    return res.status(400).json({ error: "Missing image field (base64 string)", receivedKeys: Object.keys(body) });
   }
 
   const SYS = `You are an OCR + order parser for Yen Sim Trading Sdn Bhd, a timber company in Malaysia.
