@@ -170,13 +170,26 @@ const SYS_PHOTO = `You are an OCR + order parser for Yen Sim Trading Sdn Bhd.
 ${SYS_MULTI.split("\n").slice(1).join("\n")}
 Return ONLY valid JSON: {"ocrText":"verbatim transcript","customer":null,"items":[{"species":"","size":"","lengths":[{"l":"10ft","q":0}],"notes":""}],"notes":"","confidence":"high|medium|low"}`;
 
-const callAI = async body => {
-  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1500,...body})});
-  const d=await r.json();
-  return JSON.parse((d.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim());
+// Calls go to Vercel serverless functions — API key stays server-side, never in browser
+const aiText = async (text) => {
+  const r = await fetch("/api/parse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!r.ok) throw new Error(`Parse failed: ${r.status}`);
+  return r.json();
 };
-const aiText  = t => callAI({system:SYS_MULTI,messages:[{role:"user",content:t}]});
-const aiPhoto = (b64,mt) => callAI({system:SYS_PHOTO,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:mt,data:b64}},{type:"text",text:"Transcribe this handwritten Malaysian timber order, then parse all items."}]}]});
+
+const aiPhoto = async (b64, mt) => {
+  const r = await fetch("/api/parse-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: b64, mimeType: mt }),
+  });
+  if (!r.ok) throw new Error(`Image parse failed: ${r.status}`);
+  return r.json();
+};
 
 // ─────────────────────────────────────────────────
 // DESIGN TOKENS
