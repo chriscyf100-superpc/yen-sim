@@ -177,8 +177,9 @@ const aiText = async (text) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
-  if (!r.ok) throw new Error(`Parse failed: ${r.status}`);
-  return r.json();
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || data.detail?.error?.message || `Parse failed: ${r.status}`);
+  return data;
 };
 
 const aiPhoto = async (b64, mt) => {
@@ -187,8 +188,9 @@ const aiPhoto = async (b64, mt) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image: b64, mimeType: mt }),
   });
-  if (!r.ok) throw new Error(`Image parse failed: ${r.status}`);
-  return r.json();
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || data.detail?.error?.message || `Image parse failed: ${r.status}`);
+  return data;
 };
 
 // ─────────────────────────────────────────────────
@@ -804,17 +806,18 @@ function SPNewOrder({user,orders,onAdd}){
   const [comprInfo,setComprInfo]=useState(null);
   const [photoB64,setPhotoB64]=useState(null);
   const [done,setDone]=useState(false);
+  const [errMsg,setErrMsg]=useState(null);
   const fileRef=useRef(null);
 
   async function parse(text,src){
-    setPhase("parsing");
+    setPhase("parsing"); setErrMsg(null);
     try{const r=await aiText(text);setEditItems((r.items||[]).map(i=>({...i,delivered:false})));setEditNotes(r.notes||"");setAiConf(r.confidence);if(r.customer&&!customer)setCustomer(r.customer||"");setPhase("editing");}
-    catch(e){setPhase("idle");}
+    catch(e){console.error("Text parse error:",e);setErrMsg(e.message||"Failed to parse text order");setPhase("idle");}
   }
 
   async function handlePhoto(f){
     if(!f?.type.startsWith("image/")) return;
-    setPhase("parsing");
+    setPhase("parsing"); setErrMsg(null);
     try{
       const ci=await compressImage(f);
       setPhotoUrl(ci.dataUrl); setPhotoB64(ci.b64);
@@ -825,7 +828,7 @@ function SPNewOrder({user,orders,onAdd}){
       setEditNotes(r.notes||""); setAiConf(r.confidence);
       if(r.customer&&!customer)setCustomer(r.customer||"");
       setPhase("editing");
-    }catch(e){setPhase("idle");}
+    }catch(e){console.error("Photo parse error:",e);setErrMsg(e.message||"Failed to parse photo order");setPhase("idle");}
   }
 
   function submit(){
@@ -869,9 +872,22 @@ function SPNewOrder({user,orders,onAdd}){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {/* Back button */}
-      <button onClick={()=>{setMethod(null);setPhase("idle");setEditItems([]);setOcrText(null);setPhotoUrl(null);setComprInfo(null);}} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",cursor:"pointer",color:D.muted,fontSize:14,padding:0,fontWeight:600}}>
+      <button onClick={()=>{setMethod(null);setPhase("idle");setEditItems([]);setOcrText(null);setPhotoUrl(null);setComprInfo(null);setErrMsg(null);}} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",cursor:"pointer",color:D.muted,fontSize:14,padding:0,fontWeight:600}}>
         ← Back
       </button>
+
+      {/* Error banner */}
+      {errMsg&&(
+        <div style={{background:"#FEF2F2",border:"1.5px solid #FECACA",borderRadius:12,padding:"13px 15px"}}>
+          <div style={{display:"flex",alignItems:"flex-start",gap:9}}>
+            <span style={{fontSize:18,flexShrink:0}}>⚠️</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:700,color:"#DC2626",marginBottom:2}}>Parsing failed</div>
+              <div style={{fontSize:13,color:"#991B1B",lineHeight:1.5,wordBreak:"break-word"}}>{errMsg}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Input area */}
       {phase==="idle"&&(
