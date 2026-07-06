@@ -32,7 +32,9 @@ QTY/LENGTH (detect from English, Chinese, or Malay):
 - Any length valid including odd: 11ft, 13ft, 15ft etc.
 
 SIZE: 2x4, 1x2, 5/8x8 etc; grades A/B/AB/CA/CB after size
-Return ONLY valid JSON:
+
+CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below — nothing before it, nothing after it. Do NOT write any introductory sentence. Do NOT use markdown code fences. The very first character of your response must be { and the very last character must be }.
+
 {"customer":null,"items":[{"species":"","size":"","lengths":[{"l":"10ft","q":0}],"notes":""}],"notes":"","confidence":"high|medium|low"}`;
 
   try {
@@ -59,7 +61,26 @@ Return ONLY valid JSON:
     }
 
     const raw = data.content?.[0]?.text || "{}";
-    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+
+    let cleaned = raw.replace(/```json|```/g, "").trim();
+    if (!cleaned.startsWith("{")) {
+      const start = cleaned.indexOf("{");
+      const end = cleaned.lastIndexOf("}");
+      if (start !== -1 && end !== -1 && end > start) {
+        cleaned = cleaned.slice(start, end + 1);
+      }
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error("JSON parse failed. Raw Claude response:", raw);
+      return res.status(502).json({
+        error: "AI returned non-JSON response",
+        detail: `Claude said: "${raw.slice(0, 200)}"`,
+      });
+    }
 
     return res.status(200).json(parsed);
 
