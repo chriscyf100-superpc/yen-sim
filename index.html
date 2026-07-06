@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#B45309" />
+
+    <!-- PWA — installs to home screen on iOS & Android -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Yen Sim" />
+
+    <!-- WhatsApp link preview -->
+    <meta property="og:title" content="Yen Sim Trading — Orders" />
+    <meta property="og:description" content="Sales order tracking for Yen Sim Trading Sdn Bhd" />
+    <meta property="og:type" content="website" />
+
+    <title>Yen Sim Trading</title>
+
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body, #root { height: 100%; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overscroll-behavior: none;
+      }
+      /* Remove iOS tap highlight */
+      * { -webkit-tap-highlight-color: transparent; }
+      /* Safe area for iPhone notch / home bar */
+      #root { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
