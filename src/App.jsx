@@ -11,7 +11,7 @@ const USERS = [
   { id:"sp4", name:"Tan Yen Yee",   role:"salesperson", ini:"YY", clr:"#2563EB" },
   { id:"sp5", name:"Tan Pui Yi",    role:"salesperson", ini:"PY", clr:"#DC2626" },
 ];
-const CUSTOMERS = [
+const INITIAL_CUSTOMERS = [
   "Ahmed Trading","SH Huat","Cantor Bhd","Sepang Hardware","Loy Heong",
   "Langat Jaya","MPE Sdn Bhd","Lambang Kini","Broga Trading","THL Sdn Bhd",
   "Hong Yet Hardware","Maju Jaya","Zhen Shn","Genesis Sdn Bhd",
@@ -469,9 +469,63 @@ function CustomerTracking({order,onClose}){
 }
 
 // ─────────────────────────────────────────────────
+// CUSTOMER SELECT — dropdown + inline "add new customer"
+// ─────────────────────────────────────────────────
+function CustomerSelect({customers,value,onChange,onAddCustomer,suggested,style}){
+  const [adding,setAdding]=useState(false);
+  const [newName,setNewName]=useState(suggested||"");
+
+  function handleSelectChange(e){
+    if(e.target.value==="__add_new__"){
+      setNewName(suggested||"");
+      setAdding(true);
+    } else {
+      onChange(e.target.value);
+    }
+  }
+
+  function confirmAdd(){
+    const trimmed=newName.trim();
+    if(!trimmed) return;
+    onAddCustomer(trimmed);
+    onChange(trimmed);
+    setAdding(false);
+  }
+
+  if(adding){
+    return(
+      <div style={{border:"2px solid #B45309",borderRadius:10,padding:"11px 12px",background:"#FFFBEB"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#92400E",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>➕ New Customer</div>
+        <div style={{display:"flex",gap:7}}>
+          <input autoFocus value={newName} onChange={e=>setNewName(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter")confirmAdd();if(e.key==="Escape")setAdding(false);}}
+            placeholder="Company name…" style={{...D.inp,flex:1}}/>
+          <button onClick={confirmAdd} disabled={!newName.trim()}
+            style={{background:"#059669",color:"#fff",border:"none",borderRadius:9,padding:"0 16px",fontWeight:700,fontSize:13,cursor:"pointer",opacity:!newName.trim()?.5:1}}>
+            Add
+          </button>
+          <button onClick={()=>setAdding(false)}
+            style={{background:"#fff",border:"1.5px solid #E8E3DC",borderRadius:9,padding:"0 14px",fontWeight:600,fontSize:13,cursor:"pointer",color:D.muted}}>
+            ✕
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <select value={value} onChange={handleSelectChange} style={style||D.sel}>
+      <option value="">Select customer…</option>
+      {customers.map(c=><option key={c} value={c}>{c}</option>)}
+      <option value="__add_new__">➕ Add new customer…</option>
+    </select>
+  );
+}
+
+// ─────────────────────────────────────────────────
 // ORDER DETAIL BOTTOM SHEET
 // ─────────────────────────────────────────────────
-function OrderSheet({order,onClose,onMove,onTick,onEdit,isManager,canEdit}){
+function OrderSheet({order,onClose,onMove,onTick,onEdit,isManager,canEdit,customers,onAddCustomer}){
   const [mode,setMode]=useState("view");
   const [editItems,setEditItems]=useState([]);
   const [editNotes,setEditNotes]=useState("");
@@ -507,7 +561,7 @@ function OrderSheet({order,onClose,onMove,onTick,onEdit,isManager,canEdit}){
             </div>
             {mode==="view"
               ?<div style={{fontWeight:800,fontSize:18,color:D.text}}>{order.customer}</div>
-              :<select value={editCustomer} onChange={e=>setEditCustomer(e.target.value)} style={{...D.sel,fontWeight:700,fontSize:16}}>{CUSTOMERS.map(c=><option key={c}>{c}</option>)}</select>
+              :<CustomerSelect customers={customers} value={editCustomer} onChange={setEditCustomer} onAddCustomer={onAddCustomer} style={{...D.sel,fontWeight:700,fontSize:16}}/>
             }
             <div style={{fontSize:12,color:D.muted,marginTop:3,display:"flex",alignItems:"center",gap:5}}><Ava name={order.salesperson} sz={14}/>{order.salesperson} · {fmtShort(order.createdAt)}</div>
           </div>
@@ -686,7 +740,7 @@ function KanbanCard({order,onOpen,onMove}){
 // ─────────────────────────────────────────────────
 // MANAGER — KANBAN BOARD (horizontal scroll columns)
 // ─────────────────────────────────────────────────
-function KanbanView({orders,onMove,onTick,onEdit}){
+function KanbanView({orders,onMove,onTick,onEdit,customers,onAddCustomer}){
   const [sel,setSel]=useState(null);
   const byStatus=useMemo(()=>{
     const m={New:[],Confirmed:[],Delivered:[],Paid:[]};
@@ -721,7 +775,7 @@ function KanbanView({orders,onMove,onTick,onEdit}){
       </div>
       <div style={{textAlign:"center",fontSize:11,color:D.faint,marginTop:6}}>← Swipe to see all stages →</div>
       {sel&&selOrder&&(
-        <OrderSheet order={selOrder} onClose={()=>setSel(null)} onMove={onMove} onTick={onTick} onEdit={onEdit} isManager={true} canEdit={true}/>
+        <OrderSheet order={selOrder} onClose={()=>setSel(null)} onMove={onMove} onTick={onTick} onEdit={onEdit} isManager={true} canEdit={true} customers={customers} onAddCustomer={onAddCustomer}/>
       )}
     </div>
   );
@@ -730,7 +784,7 @@ function KanbanView({orders,onMove,onTick,onEdit}){
 // ─────────────────────────────────────────────────
 // MANAGER — ORDER BOARD (List / Kanban toggle wrapper)
 // ─────────────────────────────────────────────────
-function ManagerBoard({orders,onMove,onTick,onEdit}){
+function ManagerBoard({orders,onMove,onTick,onEdit,customers,onAddCustomer}){
   const [view,setView]=useState("list"); // list | kanban
   const [filter,setFilter]=useState("All");
   const [sel,setSel]=useState(null);
@@ -753,7 +807,7 @@ function ManagerBoard({orders,onMove,onTick,onEdit}){
       </div>
 
       {view==="kanban"?(
-        <KanbanView orders={orders} onMove={onMove} onTick={onTick} onEdit={onEdit}/>
+        <KanbanView orders={orders} onMove={onMove} onTick={onTick} onEdit={onEdit} customers={customers} onAddCustomer={onAddCustomer}/>
       ):(
         <>
           {/* Filter pills */}
@@ -770,7 +824,7 @@ function ManagerBoard({orders,onMove,onTick,onEdit}){
           {shown.length===0&&<div style={{textAlign:"center",padding:"48px 20px",color:D.faint,fontSize:15}}>No orders in this status</div>}
           {shown.map(o=><OrderCard key={o.id} order={o} onOpen={id=>setSel(id)}/>)}
           {sel&&selOrder&&(
-            <OrderSheet order={selOrder} onClose={()=>setSel(null)} onMove={onMove} onTick={onTick} onEdit={onEdit} isManager={true} canEdit={true}/>
+            <OrderSheet order={selOrder} onClose={()=>setSel(null)} onMove={onMove} onTick={onTick} onEdit={onEdit} isManager={true} canEdit={true} customers={customers} onAddCustomer={onAddCustomer}/>
           )}
         </>
       )}
@@ -915,7 +969,7 @@ function ManagerStats({orders}){
 // ─────────────────────────────────────────────────
 // SALESPERSON — NEW ORDER  (text / photo / voice)
 // ─────────────────────────────────────────────────
-function SPNewOrder({user,orders,onAdd}){
+function SPNewOrder({user,orders,onAdd,customers,onAddCustomer}){
   const [method,setMethod]=useState(null); // null|text|photo|voice
   const [msgText,setMsgText]=useState("");
   const [customer,setCustomer]=useState("");
@@ -943,7 +997,7 @@ function SPNewOrder({user,orders,onAdd}){
 
   function matchCustomer(name){
     if(!name) return "";
-    const hit = CUSTOMERS.find(c=>c.toLowerCase().includes(name.toLowerCase())||name.toLowerCase().includes(c.toLowerCase()));
+    const hit = customers.find(c=>c.toLowerCase().includes(name.toLowerCase())||name.toLowerCase().includes(c.toLowerCase()));
     return hit || "";
   }
 
@@ -1152,13 +1206,23 @@ function SPNewOrder({user,orders,onAdd}){
           {/* Customer */}
           <div>
             <span style={D.lbl}>Customer {sections.length>1&&`(Section ${sectionIdx+1})`}</span>
-            <select value={customer} onChange={e=>setCustomer(e.target.value)} style={D.sel}>
-              <option value="">Select customer…</option>
-              {CUSTOMERS.map(c=><option key={c}>{c}</option>)}
-            </select>
-            {sections[sectionIdx]?.customer && !CUSTOMERS.includes(customer) && (
-              <div style={{fontSize:12,color:"#D97706",marginTop:5}}>
-                ⚠️ AI detected "<strong>{sections[sectionIdx].customer}</strong>" but it's not in your customer list yet — please pick the closest match, or add this customer to your system first.
+            <CustomerSelect
+              customers={customers}
+              value={customer}
+              onChange={setCustomer}
+              onAddCustomer={onAddCustomer}
+              suggested={sections[sectionIdx]?.customer||""}
+              style={D.sel}
+            />
+            {sections[sectionIdx]?.customer && !customers.includes(customer) && (
+              <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:9,padding:"9px 11px",marginTop:6,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:12,color:"#92400E",flex:1,minWidth:180}}>
+                  ⚠️ AI detected "<strong>{sections[sectionIdx].customer}</strong>" — not in your list yet.
+                </div>
+                <button onClick={()=>{onAddCustomer(sections[sectionIdx].customer);setCustomer(sections[sectionIdx].customer);}}
+                  style={{background:"#B45309",color:"#fff",border:"none",borderRadius:7,padding:"6px 12px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                  ➕ Add "{sections[sectionIdx].customer}"
+                </button>
               </div>
             )}
           </div>
@@ -1187,7 +1251,7 @@ function SPNewOrder({user,orders,onAdd}){
 // ─────────────────────────────────────────────────
 // SALESPERSON — MY ORDERS
 // ─────────────────────────────────────────────────
-function SPMyOrders({user,orders,onEdit}){
+function SPMyOrders({user,orders,onEdit,customers,onAddCustomer}){
   const [filter,setFilter]=useState("All");
   const [sel,setSel]=useState(null);
   const mine=[...orders].filter(o=>o.salesperson===user.name).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
@@ -1223,7 +1287,8 @@ function SPMyOrders({user,orders,onEdit}){
       {sel&&selOrder&&(
         <OrderSheet order={selOrder} onClose={()=>setSel(null)} onMove={()=>{}} onTick={()=>{}}
           onEdit={(id,items,customer,notes)=>{onEdit(id,items,customer,notes,user.name);setSel(null);}}
-          isManager={false} canEdit={selOrder.status==="New"&&selOrder.salesperson===user.name}/>
+          isManager={false} canEdit={selOrder.status==="New"&&selOrder.salesperson===user.name}
+          customers={customers} onAddCustomer={onAddCustomer}/>
       )}
     </div>
   );
@@ -1292,10 +1357,17 @@ export default function App(){
   const [orders,setOrders]=useState(seed);
   const [log,setLog]=useState(seedLog);
   const [tab,setTab]=useState(null);
+  const [customers,setCustomers]=useState(INITIAL_CUSTOMERS);
 
   const addLog = useCallback(e=>setLog(p=>[...p,{id:genLog(p),...e}]),[]);
 
   function login(u){setUser(u);setTab(u.role==="manager"?"board":"new");}
+
+  function addCustomer(name){
+    const trimmed=(name||"").trim();
+    if(!trimmed) return;
+    setCustomers(p=> p.some(c=>c.toLowerCase()===trimmed.toLowerCase()) ? p : [...p, trimmed].sort());
+  }
 
   function addOrder(o){
     setOrders(p=>[o,...p]);
@@ -1357,11 +1429,11 @@ export default function App(){
 
       {/* Content */}
       <div style={{padding:"8px 16px 0"}}>
-        {tab==="board" &&<ManagerBoard  orders={orders} onMove={moveOrder} onTick={tickItem} onEdit={editOrder}/>}
+        {tab==="board" &&<ManagerBoard  orders={orders} onMove={moveOrder} onTick={tickItem} onEdit={editOrder} customers={customers} onAddCustomer={addCustomer}/>}
         {tab==="alerts"&&<ManagerAlerts orders={orders} log={log} onMarkRead={markRead}/>}
         {tab==="stats" &&<ManagerStats  orders={orders}/>}
-        {tab==="new"   &&<SPNewOrder    user={user} orders={orders} onAdd={addOrder}/>}
-        {tab==="mine"  &&<SPMyOrders    user={user} orders={orders} onEdit={editOrder}/>}
+        {tab==="new"   &&<SPNewOrder    user={user} orders={orders} onAdd={addOrder} customers={customers} onAddCustomer={addCustomer}/>}
+        {tab==="mine"  &&<SPMyOrders    user={user} orders={orders} onEdit={editOrder} customers={customers} onAddCustomer={addCustomer}/>}
       </div>
 
       <BottomNav tabs={TABS} active={tab} onChange={setTab} badge={badge}/>
