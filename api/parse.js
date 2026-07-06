@@ -1,55 +1,87 @@
-// api/parse.js
-// Vercel Serverless Function — proxies text order parsing to Anthropic
-// Runs SERVER-SIDE on Vercel, so the API key is never exposed to the browser
+// api/parse-image.js
+// Vercel Serverless Function — proxies image OCR + parsing to Anthropic
+// Accepts base64 image, returns parsed order JSON
 
 export default async function handler(req, res) {
-  // Only allow POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { text } = req.body;
-  if (!text) {
-    return res.status(400).json({ error: "Missing text field" });
+  // Vercel usually auto-parses JSON bodies, but fall back to manual parsing
+  // in case req.body arrives as a raw string/buffer instead of an object.
+  let body = req.body;
+  if (typeof body === "string") {
+    try { body = JSON.parse(body); }
+    catch (e) { return res.status(400).json({ error: "Invalid JSON body", detail: e.message }); }
+  }
+  if (Buffer.isBuffer(body)) {
+    try { body = JSON.parse(body.toString("utf8")); }
+    catch (e) { return res.status(400).json({ error: "Invalid JSON body (buffer)", detail: e.message }); }
+  }
+  if (!body || typeof body !== "object") {
+    return res.status(400).json({ error: "Request body missing or not JSON", bodyType: typeof req.body });
   }
 
-  const SYS = `You are an order parser for Yen Sim Trading Sdn Bhd, a timber company in Malaysia.
-Input may be in English, Mandarin (普通话), Cantonese (廣東話), or Bahasa Melayu. Parse any language.
+  const { image, mimeType } = body;
+  if (!image) {
+    return res.status(400).json({ error: "Missing image field (base64 string)", receivedKeys: Object.keys(body) });
+  }
 
-SPECIES (detect from English, Chinese, or Malay):
-- Dark Hardwood: DH, DkN, 黑木, 黑硬木, kayu keras hitam
-- Yellow Meranti: Ym, 黄梅兰地, meranti kuning
-- Meranti: Mrt, 梅兰地, meranti
-- Dark Red Meranti: DRM, 暗红梅兰地, meranti merah tua
-- Balau: 巴劳, balau
-- Chengal: 青格兰, chengal
-- Kempas: Km, 坎帕斯, kempas
+  const SYS = `You are an OCR + order parser for Yen Sim Trading Sdn Bhd, a timber company in Malaysia.
+First transcribe the handwritten text exactly as written, then parse it into orders.
 
-QTY/LENGTH (detect from English, Chinese, or Malay):
-- "100/10" or "100/10'" = 100pcs @ 10ft
-- "一百条十呎" = 100pcs @ 10ft
-- "100 keping 10 kaki" = 100pcs @ 10ft
-- Any length valid including odd: 11ft, 13ft, 15ft etc.
+IMPORTANT — MULTIPLE CUSTOMERS PER PHOTO:
+Handwritten order sheets often contain MULTIPLE customer sections on one page or photo, each
+starting with a company/customer name as a header (e.g. "Hong Shu", "LanBMAN", "Cantor Bhd"),
+followed by that customer's wood items underneath, until the next customer name header appears.
+You MUST detect each customer header and split the items into SEPARATE sections — one per
+customer. Do NOT merge items from different customer sections into a single list.
+A customer name header is usually a short line by itself (a name, not a wood/species line),
+often underlined, bolded, or followed by a colon in the handwriting.
+If the entire photo genuinely has only ONE customer, return a single section.
 
-SIZE: 2x4, 1x2, 5/8x8 etc; grades A/B/AB/CA/CB after size
+SPECIES: DH/DkN→"Dark Hardwood", Ym/YM→"Yellow Meranti", Mrt/MRT→"Meranti",
+         DRM→"Dark Red Meranti", Balau→"Balau", Chengal→"Chengal", Km/KM→"Kempas"
+         Also: 黑木→Dark Hardwood, 梅兰地→Meranti
 
-CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below — nothing before it, nothing after it. Do NOT write any introductory sentence. Do NOT use markdown code fences. Do NOT add any follow-up commentary, self-correction, or re-analysis after the JSON (e.g. never write "Wait, let me re-parse..."). Decide on your final answer internally, then output ONLY the finished JSON object. The very first character of your response must be { and the very last character must be }.
+QTY/LENGTH: "100/10'"=100pcs@10ft, "一百条十呎"=100@10ft, "100 keping 10 kaki"=100@10ft
+Any length valid including odd numbers: 11ft, 13ft, 15ft etc.
 
-{"customer":null,"items":[{"species":"","size":"","lengths":[{"l":"10ft","q":0}],"notes":""}],"notes":"","confidence":"high|medium|low"}`;
+SIZE: 2x4, 1x2, 5/8x8; grades A/B/AB after size
+
+CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below — nothing before it, nothing after it. Do NOT write "I'll transcribe..." or any other sentence. Do NOT use markdown code fences. Do NOT add any follow-up commentary, self-correction, or re-analysis after the JSON (e.g. never write "Wait, let me re-parse..."). Decide on your final answer internally, then output ONLY the finished JSON object. The very first character of your response must be { and the very last character must be }.
+
+{"ocrText":"verbatim handwriting transcript of the ENTIRE photo","confidence":"high|medium|low","sections":[{"customer":"detected customer name or null","items":[{"species":"","size":"","lengths":[{"l":"10ft","q":0}],"notes":""}],"notes":""}]}`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_KEY,   // ← server-side only, never exposed
+        "x-api-key": process.env.ANTHROPIC_KEY,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 1200,
+        max_tokens: 1500,
         system: SYS,
-        messages: [{ role: "user", content: text }],
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mimeType || "image/jpeg",
+                data: image,
+              },
+            },
+            {
+              type: "text",
+              text: "Transcribe this handwritten Malaysian timber order sheet, then split it into separate sections — one per customer name header you find. Look carefully for multiple customer names on this page.",
+            },
+          ],
+        }],
       }),
     });
 
@@ -57,14 +89,16 @@ CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below �
 
     if (!response.ok) {
       console.error("Anthropic error:", data);
-      return res.status(502).json({ error: "AI parse failed", detail: data });
+      return res.status(502).json({ error: "AI OCR failed", detail: data });
     }
 
     const raw = data.content?.[0]?.text || "{}";
 
+    // Strip markdown fences if present
     let cleaned = raw.replace(/```json|```/g, "").trim();
 
-    // Always extract just the {...} block regardless of preamble/trailing text
+    // Always extract just the {...} block — handles preamble text before,
+    // trailing commentary after, or both, regardless of what cleaned starts with.
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
     if (start !== -1 && end !== -1 && end > start) {
@@ -82,10 +116,22 @@ CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below �
       });
     }
 
+    // Normalize: if Claude ignored the sections format and returned the old
+    // flat {customer, items} shape, wrap it into sections[] so the frontend
+    // always receives a consistent structure.
+    if (!parsed.sections && parsed.items) {
+      parsed = {
+        ocrText: parsed.ocrText || "",
+        confidence: parsed.confidence || "medium",
+        sections: [{ customer: parsed.customer || null, items: parsed.items, notes: parsed.notes || "" }],
+      };
+    }
+    if (!Array.isArray(parsed.sections)) parsed.sections = [];
+
     return res.status(200).json(parsed);
 
   } catch (err) {
-    console.error("Parse error:", err);
+    console.error("Image parse error:", err);
     return res.status(500).json({ error: "Internal error", detail: err.message });
   }
 }
