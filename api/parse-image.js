@@ -28,8 +28,17 @@ export default async function handler(req, res) {
   }
 
   const SYS = `You are an OCR + order parser for Yen Sim Trading Sdn Bhd, a timber company in Malaysia.
-First transcribe the handwritten text exactly as written, then parse it into a timber order.
-Input may be in English, Mandarin, Cantonese, or Bahasa Melayu.
+First transcribe the handwritten text exactly as written, then parse it into orders.
+
+IMPORTANT — MULTIPLE CUSTOMERS PER PHOTO:
+Handwritten order sheets often contain MULTIPLE customer sections on one page or photo, each
+starting with a company/customer name as a header (e.g. "Hong Shu", "LanBMAN", "Cantor Bhd"),
+followed by that customer's wood items underneath, until the next customer name header appears.
+You MUST detect each customer header and split the items into SEPARATE sections — one per
+customer. Do NOT merge items from different customer sections into a single list.
+A customer name header is usually a short line by itself (a name, not a wood/species line),
+often underlined, bolded, or followed by a colon in the handwriting.
+If the entire photo genuinely has only ONE customer, return a single section.
 
 SPECIES: DH/DkN→"Dark Hardwood", Ym/YM→"Yellow Meranti", Mrt/MRT→"Meranti",
          DRM→"Dark Red Meranti", Balau→"Balau", Chengal→"Chengal", Km/KM→"Kempas"
@@ -40,9 +49,9 @@ Any length valid including odd numbers: 11ft, 13ft, 15ft etc.
 
 SIZE: 2x4, 1x2, 5/8x8; grades A/B/AB after size
 
-CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below — nothing before it, nothing after it. Do NOT write "I'll transcribe..." or any other sentence. Do NOT use markdown code fences. The very first character of your response must be { and the very last character must be }.
+CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below — nothing before it, nothing after it. Do NOT write "I'll transcribe..." or any other sentence. Do NOT use markdown code fences. Do NOT add any follow-up commentary, self-correction, or re-analysis after the JSON (e.g. never write "Wait, let me re-parse..."). Decide on your final answer internally, then output ONLY the finished JSON object. The very first character of your response must be { and the very last character must be }.
 
-{"ocrText":"verbatim handwriting transcript","customer":null,"items":[{"species":"","size":"","lengths":[{"l":"10ft","q":0}],"notes":""}],"notes":"","confidence":"high|medium|low"}`;
+{"ocrText":"verbatim handwriting transcript of the ENTIRE photo","confidence":"high|medium|low","sections":[{"customer":"detected customer name or null","items":[{"species":"","size":"","lengths":[{"l":"10ft","q":0}],"notes":""}],"notes":""}]}`;
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -69,7 +78,7 @@ CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below �
             },
             {
               type: "text",
-              text: "Transcribe and parse this handwritten Malaysian timber order sheet.",
+              text: "Transcribe this handwritten Malaysian timber order sheet, then split it into separate sections — one per customer name header you find. Look carefully for multiple customer names on this page.",
             },
           ],
         }],
@@ -88,13 +97,12 @@ CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below �
     // Strip markdown fences if present
     let cleaned = raw.replace(/```json|```/g, "").trim();
 
-    // If Claude added a sentence before/after the JSON, extract just the {...} block
-    if (!cleaned.startsWith("{")) {
-      const start = cleaned.indexOf("{");
-      const end = cleaned.lastIndexOf("}");
-      if (start !== -1 && end !== -1 && end > start) {
-        cleaned = cleaned.slice(start, end + 1);
-      }
+    // Always extract just the {...} block — handles preamble text before,
+    // trailing commentary after, or both, regardless of what cleaned starts with.
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start !== -1 && end !== -1 && end > start) {
+      cleaned = cleaned.slice(start, end + 1);
     }
 
     let parsed;
@@ -104,9 +112,21 @@ CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below �
       console.error("JSON parse failed. Raw Claude response:", raw);
       return res.status(502).json({
         error: "AI returned non-JSON response",
-        detail: `Claude said: "${raw.slice(0, 200)}"`,
+        detail: `Claude said: "${raw.slice(0, 300)}"`,
       });
     }
+
+    // Normalize: if Claude ignored the sections format and returned the old
+    // flat {customer, items} shape, wrap it into sections[] so the frontend
+    // always receives a consistent structure.
+    if (!parsed.sections && parsed.items) {
+      parsed = {
+        ocrText: parsed.ocrText || "",
+        confidence: parsed.confidence || "medium",
+        sections: [{ customer: parsed.customer || null, items: parsed.items, notes: parsed.notes || "" }],
+      };
+    }
+    if (!Array.isArray(parsed.sections)) parsed.sections = [];
 
     return res.status(200).json(parsed);
 
