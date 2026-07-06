@@ -178,7 +178,11 @@ const aiText = async (text) => {
     body: JSON.stringify({ text }),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || data.detail?.error?.message || `Parse failed: ${r.status}`);
+  if (!r.ok) {
+    const detail = typeof data.detail === "string" ? data.detail
+      : data.detail?.error?.message || JSON.stringify(data.detail || {});
+    throw new Error(`${data.error || "Parse failed"}: ${detail}`.replace(/: $/, ""));
+  }
   return data;
 };
 
@@ -189,7 +193,11 @@ const aiPhoto = async (b64, mt) => {
     body: JSON.stringify({ image: b64, mimeType: mt }),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || data.detail?.error?.message || `Image parse failed: ${r.status}`);
+  if (!r.ok) {
+    const detail = typeof data.detail === "string" ? data.detail
+      : data.detail?.error?.message || JSON.stringify(data.detail || {});
+    throw new Error(`${data.error || "Image parse failed"}: ${detail}`.replace(/: $/, ""));
+  }
   return data;
 };
 
