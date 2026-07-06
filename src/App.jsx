@@ -633,9 +633,105 @@ function OrderCard({order,onOpen}){
 }
 
 // ─────────────────────────────────────────────────
-// MANAGER — ORDER BOARD
+// MANAGER — KANBAN CARD (compact, for column view)
+// ─────────────────────────────────────────────────
+function KanbanCard({order,onOpen,onMove}){
+  const done=order.items.filter(i=>i.delivered).length;
+  const total=order.items.length;
+  const overdue=isOD(order);
+  const next=COLS[COLS.indexOf(order.status)+1];
+  return(
+    <div onClick={()=>onOpen(order.id)}
+      style={{background:"#fff",borderRadius:12,padding:"11px",marginBottom:8,cursor:"pointer",
+        border:`1px solid ${overdue?"#FECACA":"#E8E3DC"}`,
+        boxShadow:overdue?"0 0 0 2px #FCA5A5,0 1px 4px rgba(0,0,0,0.05)":"0 1px 3px rgba(0,0,0,0.05)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+        <div style={{display:"flex",alignItems:"center",gap:5}}>
+          <code style={{fontSize:10,fontWeight:700,color:"#B45309"}}>{order.id}</code>
+          <SrcBadge source={order.source}/>
+          {overdue&&<span style={{fontSize:10,fontWeight:700,color:"#DC2626"}}>⚠{daysAgo(order.createdAt)}d</span>}
+        </div>
+        <Ava name={order.salesperson} sz={20}/>
+      </div>
+      <div style={{fontWeight:700,fontSize:14,color:D.text,marginBottom:6,lineHeight:1.2}}>{order.customer}</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:8}}>
+        {order.items.slice(0,2).map((it,i)=>(
+          <span key={i} style={{background:it.delivered?"#F0FDF4":"#F8F5F0",color:it.delivered?"#166534":"#57534E",fontSize:10,padding:"2px 7px",borderRadius:20,border:`1px solid ${it.delivered?"#BBF7D0":"#E8E3DC"}`,textDecoration:it.delivered?"line-through":"none"}}>
+            {it.species.split(" ").pop()} {it.size}
+          </span>
+        ))}
+        {order.items.length>2&&<span style={{fontSize:10,color:D.faint}}>+{order.items.length-2}</span>}
+      </div>
+      {total>1&&(
+        <div style={{marginBottom:8}}>
+          <div style={{height:4,borderRadius:999,background:"#E8E3DC",overflow:"hidden"}}>
+            <div style={{height:4,borderRadius:999,background:done===total?"#059669":"#B45309",width:`${(done/total)*100}%`}}/>
+          </div>
+          <div style={{fontSize:10,color:done===total?"#059669":D.muted,marginTop:2}}>{done}/{total} dispatched</div>
+        </div>
+      )}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <span style={{fontSize:10,color:D.faint}}>{fmtShort(order.createdAt)}</span>
+        {next?(
+          <button onClick={e=>{e.stopPropagation();onMove(order.id,next);}}
+            style={{background:SC[next].lt,color:SC[next].c,border:`1px solid ${SC[next].bd}`,borderRadius:20,padding:"3px 9px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+            → {next}
+          </button>
+        ):<span style={{fontSize:10,fontWeight:700,color:"#059669"}}>✓ Done</span>}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────
+// MANAGER — KANBAN BOARD (horizontal scroll columns)
+// ─────────────────────────────────────────────────
+function KanbanView({orders,onMove,onTick,onEdit}){
+  const [sel,setSel]=useState(null);
+  const byStatus=useMemo(()=>{
+    const m={New:[],Confirmed:[],Delivered:[],Paid:[]};
+    [...orders].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).forEach(o=>m[o.status]?.push(o));
+    return m;
+  },[orders]);
+  const selOrder=orders.find(o=>o.id===sel);
+
+  return(
+    <div>
+      <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:10,marginLeft:-16,marginRight:-16,paddingLeft:16,paddingRight:16,WebkitOverflowScrolling:"touch"}}>
+        {COLS.map(col=>{
+          const c=SC[col];
+          const cards=byStatus[col]||[];
+          const overdueCnt=cards.filter(isOD).length;
+          return(
+            <div key={col} style={{minWidth:220,width:220,flexShrink:0}}>
+              <div style={{background:c.dark,borderRadius:"12px 12px 0 0",padding:"10px 13px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{color:"#fff",fontWeight:700,fontSize:13}}>{col}</span>
+                <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                  {overdueCnt>0&&<span style={{background:"#DC2626",color:"#fff",borderRadius:999,fontSize:9,fontWeight:700,padding:"1px 6px"}}>⚠{overdueCnt}</span>}
+                  <span style={{background:"rgba(255,255,255,0.25)",color:"#fff",borderRadius:999,fontSize:11,fontWeight:700,padding:"1px 8px"}}>{cards.length}</span>
+                </div>
+              </div>
+              <div style={{background:c.bg,border:`1px solid ${c.bd}`,borderTop:"none",borderRadius:"0 0 12px 12px",padding:"9px",minHeight:120,maxHeight:"calc(100vh - 320px)",overflowY:"auto"}}>
+                {cards.length===0&&<div style={{textAlign:"center",padding:"20px 8px",fontSize:12,color:c.c,opacity:.4}}>No orders</div>}
+                {cards.map(o=><KanbanCard key={o.id} order={o} onOpen={id=>setSel(id)} onMove={onMove}/>)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{textAlign:"center",fontSize:11,color:D.faint,marginTop:6}}>← Swipe to see all stages →</div>
+      {sel&&selOrder&&(
+        <OrderSheet order={selOrder} onClose={()=>setSel(null)} onMove={onMove} onTick={onTick} onEdit={onEdit} isManager={true} canEdit={true}/>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────
+// MANAGER — ORDER BOARD (List / Kanban toggle wrapper)
 // ─────────────────────────────────────────────────
 function ManagerBoard({orders,onMove,onTick,onEdit}){
+  const [view,setView]=useState("list"); // list | kanban
   const [filter,setFilter]=useState("All");
   const [sel,setSel]=useState(null);
   const counts=useMemo(()=>{const c={All:orders.length,New:0,Confirmed:0,Delivered:0,Paid:0};orders.forEach(o=>c[o.status]++);return c;},[orders]);
@@ -644,21 +740,39 @@ function ManagerBoard({orders,onMove,onTick,onEdit}){
 
   return(
     <div>
-      {/* Filter pills */}
-      <div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:8,marginBottom:4}}>
-        {["All",...COLS].map(s=>{const active=filter===s;const c=s!=="All"?SC[s]:null;return(
-          <button key={s} onClick={()=>setFilter(s)}
-            style={{padding:"8px 14px",border:`1.5px solid ${active&&c?c.c:"#E8E3DC"}`,borderRadius:999,
-              background:active&&c?c.lt:"#fff",color:active&&c?c.c:D.muted,
-              fontSize:13,fontWeight:active?700:500,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
-            {s}{counts[s]>0&&s!=="All"?` · ${counts[s]}`:""}
+      {/* View toggle */}
+      <div style={{display:"flex",gap:1,padding:3,borderRadius:10,background:"#F0EDE8",width:"fit-content",marginBottom:12}}>
+        {[{id:"list",icon:"📄",label:"List"},{id:"kanban",icon:"📋",label:"Kanban"}].map(v=>(
+          <button key={v.id} onClick={()=>setView(v.id)}
+            style={{padding:"7px 14px",border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",
+              background:view===v.id?"#fff":"transparent",color:view===v.id?D.text:D.muted,
+              boxShadow:view===v.id?"0 1px 3px rgba(0,0,0,0.1)":"none",display:"flex",alignItems:"center",gap:5}}>
+            {v.icon} {v.label}
           </button>
-        );})}
+        ))}
       </div>
-      {shown.length===0&&<div style={{textAlign:"center",padding:"48px 20px",color:D.faint,fontSize:15}}>No orders in this status</div>}
-      {shown.map(o=><OrderCard key={o.id} order={o} onOpen={id=>setSel(id)}/>)}
-      {sel&&selOrder&&(
-        <OrderSheet order={selOrder} onClose={()=>setSel(null)} onMove={onMove} onTick={onTick} onEdit={onEdit} isManager={true} canEdit={true}/>
+
+      {view==="kanban"?(
+        <KanbanView orders={orders} onMove={onMove} onTick={onTick} onEdit={onEdit}/>
+      ):(
+        <>
+          {/* Filter pills */}
+          <div style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:8,marginBottom:4}}>
+            {["All",...COLS].map(s=>{const active=filter===s;const c=s!=="All"?SC[s]:null;return(
+              <button key={s} onClick={()=>setFilter(s)}
+                style={{padding:"8px 14px",border:`1.5px solid ${active&&c?c.c:"#E8E3DC"}`,borderRadius:999,
+                  background:active&&c?c.lt:"#fff",color:active&&c?c.c:D.muted,
+                  fontSize:13,fontWeight:active?700:500,cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
+                {s}{counts[s]>0&&s!=="All"?` · ${counts[s]}`:""}
+              </button>
+            );})}
+          </div>
+          {shown.length===0&&<div style={{textAlign:"center",padding:"48px 20px",color:D.faint,fontSize:15}}>No orders in this status</div>}
+          {shown.map(o=><OrderCard key={o.id} order={o} onOpen={id=>setSel(id)}/>)}
+          {sel&&selOrder&&(
+            <OrderSheet order={selOrder} onClose={()=>setSel(null)} onMove={onMove} onTick={onTick} onEdit={onEdit} isManager={true} canEdit={true}/>
+          )}
+        </>
       )}
     </div>
   );
@@ -817,9 +931,41 @@ function SPNewOrder({user,orders,onAdd}){
   const [errMsg,setErrMsg]=useState(null);
   const fileRef=useRef(null);
 
+  // Multi-section support (photo can contain several customer sections)
+  const [sections,setSections]=useState([]);      // [{customer, items, notes, submitted}]
+  const [sectionIdx,setSectionIdx]=useState(0);
+
+  function resetAll(){
+    setMethod(null); setPhase("idle"); setEditItems([]); setOcrText(null);
+    setPhotoUrl(null); setComprInfo(null); setErrMsg(null);
+    setSections([]); setSectionIdx(0); setCustomer(""); setEditNotes(""); setMsgText("");
+  }
+
+  function matchCustomer(name){
+    if(!name) return "";
+    const hit = CUSTOMERS.find(c=>c.toLowerCase().includes(name.toLowerCase())||name.toLowerCase().includes(c.toLowerCase()));
+    return hit || "";
+  }
+
+  function loadSection(idx, list){
+    const s = list[idx];
+    if(!s) return;
+    setCustomer(matchCustomer(s.customer));
+    setEditItems((s.items||[]).map(i=>({...i,delivered:false})));
+    setEditNotes(s.notes||"");
+    setSectionIdx(idx);
+  }
+
   async function parse(text,src){
     setPhase("parsing"); setErrMsg(null);
-    try{const r=await aiText(text);setEditItems((r.items||[]).map(i=>({...i,delivered:false})));setEditNotes(r.notes||"");setAiConf(r.confidence);if(r.customer&&!customer)setCustomer(r.customer||"");setPhase("editing");}
+    try{
+      const r=await aiText(text);
+      setEditItems((r.items||[]).map(i=>({...i,delivered:false})));
+      setEditNotes(r.notes||""); setAiConf(r.confidence);
+      if(r.customer&&!customer) setCustomer(matchCustomer(r.customer)||r.customer);
+      setSections([]); // single-section flow for text/voice
+      setPhase("editing");
+    }
     catch(e){console.error("Text parse error:",e);setErrMsg(e.message||"Failed to parse text order");setPhase("idle");}
   }
 
@@ -832,9 +978,16 @@ function SPNewOrder({user,orders,onAdd}){
       setComprInfo({orig:ci.origSize,comp:ci.size,pct:Math.round((1-ci.size/ci.origSize)*100)});
       const r=await aiPhoto(ci.b64,"image/jpeg");
       setOcrText(r.ocrText||null);
-      setEditItems((r.items||[]).map(i=>({...i,delivered:false})));
-      setEditNotes(r.notes||""); setAiConf(r.confidence);
-      if(r.customer&&!customer)setCustomer(r.customer||"");
+      setAiConf(r.confidence);
+
+      const secs = (r.sections||[]).map(s=>({customer:s.customer||null, items:(s.items||[]).map(i=>({...i,delivered:false})), notes:s.notes||"", submitted:false}));
+      if(secs.length===0){
+        setErrMsg("No order items were detected in this photo. Try a clearer photo.");
+        setPhase("idle");
+        return;
+      }
+      setSections(secs);
+      loadSection(0, secs);
       setPhase("editing");
     }catch(e){console.error("Photo parse error:",e);setErrMsg(e.message||"Failed to parse photo order");setPhase("idle");}
   }
@@ -843,15 +996,32 @@ function SPNewOrder({user,orders,onAdd}){
     if(!editItems.length||!customer) return;
     const ord={id:genOrd(orders),customer,salesperson:user.name,source:method,status:"New",createdAt:nowIso(),rawInput:method==="photo"?"[Photo]":msgText,ocrText:ocrText||null,notes:editNotes,items:editItems};
     onAdd(ord);
-    setDone(true); setMethod(null); setMsgText(""); setCustomer(""); setEditItems([]); setEditNotes(""); setPhotoUrl(null); setPhotoB64(null); setOcrText(null); setAiConf(null); setComprInfo(null); setPhase("idle");
-    setTimeout(()=>setDone(false),3000);
+
+    if(sections.length>1){
+      // Multi-section flow: mark this section submitted, move to next unsubmitted one
+      const updated = sections.map((s,i)=> i===sectionIdx ? {...s,submitted:true} : s);
+      setSections(updated);
+      const nextIdx = updated.findIndex(s=>!s.submitted);
+      if(nextIdx===-1){
+        // all sections done
+        setDone(true);
+        setTimeout(()=>{setDone(false); resetAll();},3000);
+      } else {
+        loadSection(nextIdx, updated);
+      }
+    } else {
+      setDone(true);
+      setTimeout(()=>{setDone(false); resetAll();},3000);
+    }
   }
 
   if(done) return(
     <div style={{textAlign:"center",padding:"60px 20px"}}>
       <div style={{fontSize:56,marginBottom:14}}>✅</div>
-      <div style={{fontSize:18,fontWeight:700,color:"#059669",marginBottom:6}}>Order Submitted!</div>
-      <div style={{fontSize:14,color:D.muted}}>The manager will see it on the board.</div>
+      <div style={{fontSize:18,fontWeight:700,color:"#059669",marginBottom:6}}>
+        {sections.length>1?"All Orders Submitted!":"Order Submitted!"}
+      </div>
+      <div style={{fontSize:14,color:D.muted}}>The manager will see {sections.length>1?"them":"it"} on the board.</div>
     </div>
   );
 
@@ -880,7 +1050,7 @@ function SPNewOrder({user,orders,onAdd}){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {/* Back button */}
-      <button onClick={()=>{setMethod(null);setPhase("idle");setEditItems([]);setOcrText(null);setPhotoUrl(null);setComprInfo(null);setErrMsg(null);}} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",cursor:"pointer",color:D.muted,fontSize:14,padding:0,fontWeight:600}}>
+      <button onClick={resetAll} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",cursor:"pointer",color:D.muted,fontSize:14,padding:0,fontWeight:600}}>
         ← Back
       </button>
 
@@ -914,6 +1084,7 @@ function SPNewOrder({user,orders,onAdd}){
               <div style={{fontSize:48}}>📷</div>
               <div style={{fontWeight:700,fontSize:16,color:D.text}}>Tap to attach photo</div>
               <div style={{fontSize:13,color:D.muted}}>Photo will be auto-compressed before upload</div>
+              <div style={{fontSize:11,color:D.faint,marginTop:2}}>Multiple customers on one photo are auto-detected & split</div>
               <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>handlePhoto(e.target.files?.[0])}/>
             </div>
           )}
@@ -941,6 +1112,29 @@ function SPNewOrder({user,orders,onAdd}){
             {aiConf&&<span style={{...D.pill,background:aiConf==="high"?"#F0FDF4":aiConf==="medium"?"#FFFBEB":"#FEF2F2",color:aiConf==="high"?"#166534":aiConf==="medium"?"#92400E":"#991B1B",fontSize:11}}>⚡{aiConf}</span>}
           </div>
 
+          {/* Multi-section indicator */}
+          {sections.length>1&&(
+            <div style={{background:"#F5F3FF",border:"1.5px solid #DDD6FE",borderRadius:12,padding:"12px 14px"}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#5B21B6",marginBottom:8}}>
+                📋 {sections.length} customer sections detected on this photo
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {sections.map((s,i)=>(
+                  <button key={i} onClick={()=>loadSection(i,sections)}
+                    style={{padding:"6px 12px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",
+                      border:`1.5px solid ${i===sectionIdx?"#7C3AED":s.submitted?"#A7F3D0":"#DDD6FE"}`,
+                      background:i===sectionIdx?"#EDE9FE":s.submitted?"#ECFDF5":"#fff",
+                      color:i===sectionIdx?"#5B21B6":s.submitted?"#059669":"#7C3AED"}}>
+                    {s.submitted?"✓ ":""}{s.customer||`Section ${i+1}`}
+                  </button>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:"#7C3AED",marginTop:8}}>
+                Reviewing {sectionIdx+1} of {sections.length} — submit each one, then move to the next
+              </div>
+            </div>
+          )}
+
           {/* Photo compression info */}
           {comprInfo&&method==="photo"&&(
             <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"10px 13px",display:"flex",alignItems:"center",gap:8}}>
@@ -950,18 +1144,23 @@ function SPNewOrder({user,orders,onAdd}){
           )}
 
           {/* OCR output */}
-          {ocrText&&<div><span style={D.lbl}>OCR — What AI read from your photo</span><pre style={{fontFamily:"monospace",fontSize:13,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"10px 13px",whiteSpace:"pre-wrap",color:"#166534",margin:0,lineHeight:1.7}}>{ocrText}</pre></div>}
+          {ocrText&&<div><span style={D.lbl}>OCR — What AI read from your photo (full page)</span><pre style={{fontFamily:"monospace",fontSize:13,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"10px 13px",whiteSpace:"pre-wrap",color:"#166534",margin:0,lineHeight:1.7,maxHeight:180,overflowY:"auto"}}>{ocrText}</pre></div>}
 
           {/* Transcript (voice) */}
           {method==="voice"&&msgText&&<div><span style={D.lbl}>Voice Transcript</span><div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:10,padding:"10px 13px",fontSize:14,color:"#5B21B6",lineHeight:1.6}}>{msgText}</div></div>}
 
           {/* Customer */}
           <div>
-            <span style={D.lbl}>Customer</span>
+            <span style={D.lbl}>Customer {sections.length>1&&`(Section ${sectionIdx+1})`}</span>
             <select value={customer} onChange={e=>setCustomer(e.target.value)} style={D.sel}>
               <option value="">Select customer…</option>
               {CUSTOMERS.map(c=><option key={c}>{c}</option>)}
             </select>
+            {sections[sectionIdx]?.customer && !CUSTOMERS.includes(customer) && (
+              <div style={{fontSize:12,color:"#D97706",marginTop:5}}>
+                ⚠️ AI detected "<strong>{sections[sectionIdx].customer}</strong>" but it's not in your customer list yet — please pick the closest match, or add this customer to your system first.
+              </div>
+            )}
           </div>
 
           {/* Editable items */}
@@ -974,7 +1173,9 @@ function SPNewOrder({user,orders,onAdd}){
           <div><span style={D.lbl}>Notes <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}>(optional)</span></span><input value={editNotes} onChange={e=>setEditNotes(e.target.value)} placeholder="Special instructions…" style={D.inp}/></div>
 
           <button onClick={submit} disabled={!customer||!editItems.length} style={{...D.btnPrimary,opacity:!customer||!editItems.length?.4:1}}>
-            Submit Order to Manager →
+            {sections.length>1
+              ? `Submit This Order (${sectionIdx+1}/${sections.length}) →`
+              : "Submit Order to Manager →"}
           </button>
           {!customer&&<p style={{textAlign:"center",fontSize:13,color:"#D97706",margin:0}}>↑ Select a customer to continue</p>}
         </div>
