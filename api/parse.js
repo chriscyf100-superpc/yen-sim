@@ -33,7 +33,7 @@ QTY/LENGTH (detect from English, Chinese, or Malay):
 
 SIZE: 2x4, 1x2, 5/8x8 etc; grades A/B/AB/CA/CB after size
 
-CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below â€” nothing before it, nothing after it. Do NOT write any introductory sentence. Do NOT use markdown code fences. The very first character of your response must be { and the very last character must be }.
+CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below â€” nothing before it, nothing after it. Do NOT write any introductory sentence. Do NOT use markdown code fences. Do NOT add any follow-up commentary, self-correction, or re-analysis after the JSON (e.g. never write "Wait, let me re-parse..."). Decide on your final answer internally, then output ONLY the finished JSON object. The very first character of your response must be { and the very last character must be }.
 
 {"customer":null,"items":[{"species":"","size":"","lengths":[{"l":"10ft","q":0}],"notes":""}],"notes":"","confidence":"high|medium|low"}`;
 
@@ -63,12 +63,12 @@ CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below â€
     const raw = data.content?.[0]?.text || "{}";
 
     let cleaned = raw.replace(/```json|```/g, "").trim();
-    if (!cleaned.startsWith("{")) {
-      const start = cleaned.indexOf("{");
-      const end = cleaned.lastIndexOf("}");
-      if (start !== -1 && end !== -1 && end > start) {
-        cleaned = cleaned.slice(start, end + 1);
-      }
+
+    // Always extract just the {...} block regardless of preamble/trailing text
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start !== -1 && end !== -1 && end > start) {
+      cleaned = cleaned.slice(start, end + 1);
     }
 
     let parsed;
@@ -78,7 +78,7 @@ CRITICAL OUTPUT RULE: Your entire response must be ONLY the JSON object below â€
       console.error("JSON parse failed. Raw Claude response:", raw);
       return res.status(502).json({
         error: "AI returned non-JSON response",
-        detail: `Claude said: "${raw.slice(0, 200)}"`,
+        detail: `Claude said: "${raw.slice(0, 300)}"`,
       });
     }
 
