@@ -2,6 +2,14 @@
 // Vercel Serverless Function — proxies image OCR + parsing to Anthropic
 // Accepts base64 image, returns parsed order JSON
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '8mb', // allow compressed images comfortably under this
+    },
+  },
+};
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
